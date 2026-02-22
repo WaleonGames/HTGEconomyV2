@@ -1,0 +1,35 @@
+name: HTGEconomyV2
+version: '2.1'
+main: pl.htgmc.htgeconomy.HTGEconomyPlugin
+api-version: '1.21'
+authors: [ ToJaWGYT ]
+softdepend: [Vault, PlaceholderAPI]
+
+commands:
+  dolary:
+    description: Waluta serwerowa (JSON)
+    usage: /dolary
+
+  vpln:
+    description: Waluta premium (JSON)
+    usage: /vpln
+
+  eco-server:
+    description: Panel informacji o ekonomii serwera
+    aliases: [ecoserver, ecoinfo, eco-serwer]
+    permission: htgeco.ecoserver
+    usage: /eco-server
+
+permissions:
+  htgeco.dolary.pay:
+    default: true
+  htgeco.vpln.pay:
+    default: true
+
+  htgeco.dolary.admin:
+    default: op
+  htgeco.vpln.admin:
+    default: op
+
+  htgeco.ecoserver:
+    default: op
