@@ -221,6 +221,11 @@ public final class HTGEconomyPlugin extends JavaPlugin {
         return api;
     }
 
+    /** Alias pod inne pluginy (np. HTGModule) */
+    public HTGEconomyAPI getApi() {
+        return api;
+    }
+
     private void registerMoneyCommand(String key, String symbol, MoneyCommand.Backend backend) {
         PluginCommand c = getCommand(key);
         if (c == null) {

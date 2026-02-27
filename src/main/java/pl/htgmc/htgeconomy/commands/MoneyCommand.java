@@ -64,8 +64,19 @@ public final class MoneyCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
 
-            OfflinePlayer target = Bukkit.getOfflinePlayer(args[1]);
-            if (target.getUniqueId() == null) {
+            String targetName = args[1];
+
+            // ✅ NAJPIERW: spróbuj złapać online gracza na tym serwerze
+            Player onlineTarget = Bukkit.getPlayerExact(targetName);
+
+            // ✅ UUID docelowe: jak online -> bierzemy z Player (pewne),
+            // jak offline -> bierzemy OfflinePlayer
+            OfflinePlayer targetOffline = (onlineTarget != null)
+                    ? onlineTarget
+                    : Bukkit.getOfflinePlayer(targetName);
+
+            UUID targetUuid = targetOffline.getUniqueId();
+            if (targetUuid == null) {
                 Msg.err(sender, "Nie znaleziono gracza.");
                 return true;
             }
@@ -76,17 +87,30 @@ public final class MoneyCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
 
-            boolean ok = backend.pay(p.getUniqueId(), target.getUniqueId(), amount);
+            // (opcjonalnie) blokada płatności do siebie
+            if (p.getUniqueId().equals(targetUuid)) {
+                Msg.err(sender, "Nie możesz wysłać pieniędzy sam do siebie.");
+                return true;
+            }
+
+            boolean ok = backend.pay(p.getUniqueId(), targetUuid, amount);
             if (!ok) {
                 Msg.err(sender, "Nie masz wystarczających środków.");
                 return true;
             }
 
-            Msg.ok(sender, "Wysłano §e" + MoneyUtil.fmt(amount, symbol) + "§a do §f" + (target.getName() != null ? target.getName() : args[1]));
-            if (target.isOnline()) {
-                Player tp = target.getPlayer();
-                if (tp != null) Msg.ok(tp, "Otrzymałeś §e" + MoneyUtil.fmt(amount, symbol) + "§a od §f" + p.getName());
+            // ✅ komunikat dla wysyłającego
+            String shownTargetName = (onlineTarget != null)
+                    ? onlineTarget.getName()
+                    : (targetOffline.getName() != null ? targetOffline.getName() : targetName);
+
+            Msg.ok(sender, "Wysłano §e" + MoneyUtil.fmt(amount, symbol) + "§a do §f" + shownTargetName);
+
+            // ✅ komunikat dla odbiorcy (pewny — jeśli jest online na tym serwerze)
+            if (onlineTarget != null) {
+                Msg.ok(onlineTarget, "Otrzymałeś §e" + MoneyUtil.fmt(amount, symbol) + "§a od §f" + p.getName());
             }
+
             return true;
         }
 
@@ -101,8 +125,12 @@ public final class MoneyCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
 
-            OfflinePlayer target = Bukkit.getOfflinePlayer(args[1]);
-            if (target.getUniqueId() == null) {
+            String targetName = args[1];
+            Player onlineTarget = Bukkit.getPlayerExact(targetName);
+            OfflinePlayer target = (onlineTarget != null) ? onlineTarget : Bukkit.getOfflinePlayer(targetName);
+
+            UUID tu = target.getUniqueId();
+            if (tu == null) {
                 Msg.err(sender, "Nie znaleziono gracza.");
                 return true;
             }
@@ -113,7 +141,9 @@ public final class MoneyCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
 
-            UUID tu = target.getUniqueId();
+            String shownTargetName = (onlineTarget != null)
+                    ? onlineTarget.getName()
+                    : (target.getName() != null ? target.getName() : targetName);
 
             switch (sub) {
                 case "add" -> {
@@ -122,11 +152,19 @@ public final class MoneyCommand implements CommandExecutor, TabCompleter {
                         return true;
                     }
                     backend.add(tu, amount);
-                    Msg.ok(sender, "Dodano §e" + MoneyUtil.fmt(amount, symbol) + "§a dla §f" + (target.getName() != null ? target.getName() : args[1]));
+                    Msg.ok(sender, "Dodano §e" + MoneyUtil.fmt(amount, symbol) + "§a dla §f" + shownTargetName);
+
+                    if (onlineTarget != null) {
+                        Msg.info(onlineTarget, "Dodano Ci §e" + MoneyUtil.fmt(amount, symbol) + "§7 (admin)");
+                    }
                 }
                 case "set" -> {
                     backend.set(tu, Math.max(0L, amount));
-                    Msg.ok(sender, "Ustawiono saldo §f" + (target.getName() != null ? target.getName() : args[1]) + "§a na §e" + MoneyUtil.fmt(amount, symbol));
+                    Msg.ok(sender, "Ustawiono saldo §f" + shownTargetName + "§a na §e" + MoneyUtil.fmt(amount, symbol));
+
+                    if (onlineTarget != null) {
+                        Msg.info(onlineTarget, "Twoje saldo zostało ustawione na §e" + MoneyUtil.fmt(amount, symbol) + "§7 (admin)");
+                    }
                 }
                 case "take" -> {
                     if (amount <= 0) {
@@ -138,7 +176,11 @@ public final class MoneyCommand implements CommandExecutor, TabCompleter {
                         Msg.err(sender, "Gracz ma za mało środków.");
                         return true;
                     }
-                    Msg.ok(sender, "Zabrano §e" + MoneyUtil.fmt(amount, symbol) + "§a graczowi §f" + (target.getName() != null ? target.getName() : args[1]));
+                    Msg.ok(sender, "Zabrano §e" + MoneyUtil.fmt(amount, symbol) + "§a graczowi §f" + shownTargetName);
+
+                    if (onlineTarget != null) {
+                        Msg.info(onlineTarget, "Zabrano Ci §e" + MoneyUtil.fmt(amount, symbol) + "§7 (admin)");
+                    }
                 }
             }
             return true;
