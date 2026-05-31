@@ -10,32 +10,26 @@ import java.util.UUID;
 public interface HTGEconomyAPI {
 
     // ---- DOLARY
-    long getDolary(UUID uuid);
-    void setDolary(UUID uuid, long balance);
-    void addDolary(UUID uuid, long amount);
-    boolean takeDolary(UUID uuid, long amount);
-    boolean payDolary(UUID from, UUID to, long amount);
+    double getDolary(UUID uuid);
+    void setDolary(UUID uuid, double balance);
+    void addDolary(UUID uuid, double amount);
+    boolean takeDolary(UUID uuid, double amount);
+    boolean payDolary(UUID from, UUID to, double amount);
 
     // ---- VPLN
-    long getVpln(UUID uuid);
-    void setVpln(UUID uuid, long balance);
-    void addVpln(UUID uuid, long amount);
-    boolean takeVpln(UUID uuid, long amount);
-    boolean payVpln(UUID from, UUID to, long amount);
+    double getVpln(UUID uuid);
+    void setVpln(UUID uuid, double balance);
+    void addVpln(UUID uuid, double amount);
+    boolean takeVpln(UUID uuid, double amount);
+    boolean payVpln(UUID from, UUID to, double amount);
 
     // ---- MNOŻNIKI
     double getDolaryMultiplier(OfflinePlayer player);
     double getServerMultiplier();
     long toServerDynamicPrice(long basePrice);
     long toPlayerDynamicPrice(long basePrice, OfflinePlayer player);
-
     void recalcServerMultiplierNow();
 
     // ---- HISTORIA
-    /**
-     * Zwraca ostatnie wpisy historii dla gracza.
-     * currencyOrNull = null -> wszystkie waluty (jeśli kiedyś chcesz),
-     * currencyOrNull = DOLARY/VPLN -> filtr po walucie.
-     */
     List<EconomyTxn> getRecentHistory(UUID target, Currency currencyOrNull, int limit);
 }

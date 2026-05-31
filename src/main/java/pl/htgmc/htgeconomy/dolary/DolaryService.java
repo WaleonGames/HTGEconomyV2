@@ -6,6 +6,8 @@ import pl.htgmc.htgeconomy.history.EconomyHistoryStore;
 import pl.htgmc.htgeconomy.history.EconomyTxn;
 import pl.htgmc.htgeconomy.storage.JsonBalanceStorage;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.UUID;
 
 public final class DolaryService {
@@ -22,38 +24,45 @@ public final class DolaryService {
         this.history = history;
     }
 
-    public long get(UUID uuid) {
-        return storage.get(uuid);
+    private static double round2(double value) {
+        return BigDecimal.valueOf(value)
+                .setScale(2, RoundingMode.HALF_UP)
+                .doubleValue();
+    }
+
+    public double get(UUID uuid) {
+        if (uuid == null) return 0.0;
+        return round2(storage.getDouble(uuid));
     }
 
     // --- stare metody (kompatybilność)
 
-    public void set(UUID uuid, long bal) {
+    public void set(UUID uuid, double bal) {
         set(uuid, bal, null, null);
     }
 
-    public void add(UUID uuid, long amount) {
+    public void add(UUID uuid, double amount) {
         add(uuid, amount, null, null);
     }
 
-    public boolean take(UUID uuid, long amount) {
+    public boolean take(UUID uuid, double amount) {
         return take(uuid, amount, null, null);
     }
 
-    public boolean pay(UUID from, UUID to, long amount) {
+    public boolean pay(UUID from, UUID to, double amount) {
         return pay(from, to, amount, null, null);
     }
 
     // --- nowe metody (z historią)
 
-    public void set(UUID uuid, long bal, UUID actor, String reason) {
+    public void set(UUID uuid, double bal, UUID actor, String reason) {
         if (uuid == null) return;
 
-        long target = Math.max(0L, bal);
-        long before = Math.max(0L, storage.get(uuid));
-        long after = target;
+        double target = Math.max(0.0, round2(bal));
+        double before = Math.max(0.0, round2(storage.getDouble(uuid)));
+        double after = target;
 
-        storage.set(uuid, target);
+        storage.setDouble(uuid, target);
         storage.saveAsync();
 
         log(new EconomyTxn(
@@ -70,14 +79,16 @@ public final class DolaryService {
         ));
     }
 
-    public void add(UUID uuid, long amount, UUID actor, String reason) {
+    public void add(UUID uuid, double amount, UUID actor, String reason) {
         if (uuid == null) return;
-        if (amount <= 0) return;
 
-        long before = Math.max(0L, storage.get(uuid));
-        long after = before + amount; // pewne, nie zależy od storage.get() po operacji
+        double delta = round2(amount);
+        if (delta <= 0.0) return;
 
-        storage.add(uuid, amount);
+        double before = Math.max(0.0, round2(storage.getDouble(uuid)));
+        double after = round2(before + delta);
+
+        storage.setDouble(uuid, after);
         storage.saveAsync();
 
         log(new EconomyTxn(
@@ -86,7 +97,7 @@ public final class DolaryService {
                 Action.ADD,
                 uuid,
                 null,
-                amount,
+                delta,
                 before,
                 after,
                 actor,
@@ -94,87 +105,88 @@ public final class DolaryService {
         ));
     }
 
-    public boolean take(UUID uuid, long amount, UUID actor, String reason) {
+    public boolean take(UUID uuid, double amount, UUID actor, String reason) {
         if (uuid == null) return false;
-        if (amount <= 0) return true;
 
-        long before = Math.max(0L, storage.get(uuid));
-        if (before < amount) return false;
+        double delta = round2(amount);
+        if (delta <= 0.0) return true;
 
-        long after = before - amount;
+        double before = Math.max(0.0, round2(storage.getDouble(uuid)));
+        if (before + 0.0000001 < delta) return false;
 
-        boolean ok = storage.take(uuid, amount);
+        double after = round2(before - delta);
+
+        storage.setDouble(uuid, after);
         storage.saveAsync();
 
-        if (ok) {
-            log(new EconomyTxn(
-                    System.currentTimeMillis(),
-                    Currency.DOLARY,
-                    Action.TAKE,
-                    uuid,
-                    null,
-                    amount,
-                    before,
-                    after,
-                    actor,
-                    reason
-            ));
-        }
+        log(new EconomyTxn(
+                System.currentTimeMillis(),
+                Currency.DOLARY,
+                Action.TAKE,
+                uuid,
+                null,
+                delta,
+                before,
+                after,
+                actor,
+                reason
+        ));
 
-        return ok;
+        return true;
     }
 
-    public boolean pay(UUID from, UUID to, long amount, UUID actor, String reason) {
+    public boolean pay(UUID from, UUID to, double amount, UUID actor, String reason) {
         if (from == null || to == null) return false;
-        if (amount <= 0) return true;
 
-        long beforeFrom = Math.max(0L, storage.get(from));
-        if (beforeFrom < amount) return false;
+        double delta = round2(amount);
+        if (delta <= 0.0) return true;
 
-        long beforeTo = Math.max(0L, storage.get(to));
+        double beforeFrom = Math.max(0.0, round2(storage.getDouble(from)));
+        if (beforeFrom + 0.0000001 < delta) return false;
 
-        long afterFrom = beforeFrom - amount;
-        long afterTo = beforeTo + amount;
+        double beforeTo = Math.max(0.0, round2(storage.getDouble(to)));
 
-        boolean ok = storage.transfer(from, to, amount);
+        double afterFrom = round2(beforeFrom - delta);
+        double afterTo = round2(beforeTo + delta);
+
+        storage.setDouble(from, afterFrom);
+        storage.setDouble(to, afterTo);
         storage.saveAsync();
 
-        if (ok) {
-            long ts = System.currentTimeMillis();
+        long ts = System.currentTimeMillis();
 
-            // wpis dla ODBIORCY
-            log(new EconomyTxn(
-                    ts,
-                    Currency.DOLARY,
-                    Action.PAY,
-                    to,
-                    from,
-                    amount,
-                    beforeTo,
-                    afterTo,
-                    actor,
-                    reason
-            ));
+        log(new EconomyTxn(
+                ts,
+                Currency.DOLARY,
+                Action.PAY,
+                to,
+                from,
+                delta,
+                beforeTo,
+                afterTo,
+                actor,
+                reason
+        ));
 
-            // wpis dla NADAWCY (kwota ujemna)
-            log(new EconomyTxn(
-                    ts,
-                    Currency.DOLARY,
-                    Action.PAY,
-                    from,
-                    from,
-                    -amount,
-                    beforeFrom,
-                    afterFrom,
-                    actor,
-                    reason
-            ));
-        }
+        log(new EconomyTxn(
+                ts,
+                Currency.DOLARY,
+                Action.PAY,
+                from,
+                from,
+                -delta,
+                beforeFrom,
+                afterFrom,
+                actor,
+                reason
+        ));
 
-        return ok;
+        return true;
     }
 
     private void log(EconomyTxn txn) {
-        if (history != null && txn != null) history.appendAsync(txn);
+        if (history != null && txn != null) {
+            history.appendAsync(txn);
+        }
     }
 }

@@ -14,15 +14,12 @@ import pl.htgmc.htgeconomy.commands.MoneyCommand;
 import pl.htgmc.htgeconomy.dolary.*;
 import pl.htgmc.htgeconomy.gui.EcoServerGUI;
 import pl.htgmc.htgeconomy.gui.EcoServerListener;
-import pl.htgmc.htgeconomy.history.Currency;
 import pl.htgmc.htgeconomy.history.EconomyHistoryStore;
-import pl.htgmc.htgeconomy.history.EconomyTxn;
 import pl.htgmc.htgeconomy.placeholder.EconomyExpansion;
 import pl.htgmc.htgeconomy.storage.JsonBalanceStorage;
 import pl.htgmc.htgeconomy.vpln.VplnService;
 
 import java.io.File;
-import java.util.List;
 import java.util.UUID;
 
 public final class HTGEconomyPlugin extends JavaPlugin {
@@ -33,61 +30,38 @@ public final class HTGEconomyPlugin extends JavaPlugin {
     private DolaryService dolary;
     private VplnService vpln;
 
-    // historia (txns.jsonl)
     private EconomyHistoryStore history;
-
-    // Vault economy (dla /dolary i dla innych pluginów)
     private Economy vaultEco;
-
-    // Vault perms (LuckPerms przez Vault) - opcjonalne
     private Permission vaultPerms;
-
-    // Cache rang (offline support)
     private DolaryRankCache rankCache;
-
-    // Mnożniki dolarów (default/vip/mvip/astra) - per gracz
     private DolaryMultiplierService dolaryMult;
-
-    // Globalny mnożnik serwera (online + opcjonalnie offline z cache)
     private DolaryServerMultiplierService serverMult;
-
-    // API
     private HTGEconomyAPI api;
 
     @Override
     public void onEnable() {
-        // Historia (append-only JSONL)
         history = new EconomyHistoryStore(this, new File(getDataFolder(), "history/txns.jsonl"));
 
-        // /dolary/balances.json
         dolaryStore = new JsonBalanceStorage(this, new File(getDataFolder(), "dolary/balances.json"));
         dolaryStore.load();
         dolary = new DolaryService(dolaryStore, history);
 
-        // /vpln/balances.json
         vplnStore = new JsonBalanceStorage(this, new File(getDataFolder(), "vpln/balances.json"));
         vplnStore.load();
         vpln = new VplnService(vplnStore, history);
 
-        // 1) Rejestracja Vault provider dla DOLARY
         new VaultHook(this).register(dolary);
 
-        // 2) Pobranie Economy z ServicesManager (nasz provider, albo inny jeśli ktoś nadpisał)
         vaultEco = resolveVaultEconomy();
-
-        // 2.1) Pobranie Vault Permission provider (LuckPerms przez Vault) - opcjonalne
         vaultPerms = resolveVaultPerms();
 
-        // 2.2) Rank cache (TRWAŁY, nie temp)
         rankCache = new DolaryRankCache(this, new File(getDataFolder(), "dolary/ranks.json"));
         rankCache.load();
 
-        // 2.3) Mnożniki dolarów (per gracz)
         dolaryMult = new DolaryMultiplierService(vaultPerms, rankCache);
         dolaryMult.refreshAllOnlineToCache();
         rankCache.saveNow();
 
-        // 2.4) Globalny mnożnik serwera (średnia z online + offline z cache)
         serverMult = new DolaryServerMultiplierService(
                 this,
                 dolaryMult,
@@ -96,11 +70,9 @@ public final class HTGEconomyPlugin extends JavaPlugin {
         );
         serverMult.start();
 
-        // 2.45) API (ServicesManager)
         api = new HTGEconomyAPIImpl(dolary, vpln, vaultEco, dolaryMult, serverMult, history);
         getServer().getServicesManager().register(HTGEconomyAPI.class, api, this, ServicePriority.Normal);
 
-        // 2.5) PlaceholderAPI (placeholdery ekonomii) - soft
         if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
             try {
                 new EconomyExpansion(this, dolary, vpln, dolaryMult, serverMult).register();
@@ -112,85 +84,117 @@ public final class HTGEconomyPlugin extends JavaPlugin {
             getLogger().info("PlaceholderAPI: brak — pomijam rejestrację placeholderów.");
         }
 
-        // 3) Komendy
-
-        // /dolary -> przez Vault (spójne z całym serwerem)
+        // /dolary -> przez Vault (obsługa 0.xx)
         registerMoneyCommand("dolary", "$", new MoneyCommand.Backend() {
-            @Override public long get(UUID uuid) {
+            @Override
+            public double get(UUID uuid) {
                 if (vaultEco == null) return dolary.get(uuid);
-                return (long) vaultEco.getBalance(getServer().getOfflinePlayer(uuid));
+                return vaultEco.getBalance(getServer().getOfflinePlayer(uuid));
             }
 
-            @Override public void set(UUID uuid, long bal) {
-                if (vaultEco == null) { dolary.set(uuid, bal); return; }
+            @Override
+            public void set(UUID uuid, double bal) {
+                double target = Math.max(0.0, bal);
+
+                if (vaultEco == null) {
+                    dolary.set(uuid, target, null, "cmd:set");
+                    return;
+                }
+
                 var p = getServer().getOfflinePlayer(uuid);
                 double cur = vaultEco.getBalance(p);
-                double target = Math.max(0, bal);
                 double diff = target - cur;
-                if (diff > 0) vaultEco.depositPlayer(p, diff);
-                else if (diff < 0) vaultEco.withdrawPlayer(p, -diff);
 
-                // historia (Vault path też logujemy)
-                dolary.set(uuid, (long) target, null, "vault:set");
+                if (diff > 0.0) {
+                    vaultEco.depositPlayer(p, diff);
+                } else if (diff < 0.0) {
+                    vaultEco.withdrawPlayer(p, -diff);
+                }
             }
 
-            @Override public void add(UUID uuid, long amount) {
-                if (amount <= 0) return;
+            @Override
+            public void add(UUID uuid, double amount) {
+                if (amount <= 0.0) return;
 
-                if (vaultEco == null) { dolary.add(uuid, amount); return; }
+                if (vaultEco == null) {
+                    dolary.add(uuid, amount, null, "cmd:add");
+                    return;
+                }
+
                 vaultEco.depositPlayer(getServer().getOfflinePlayer(uuid), amount);
-
-                // historia
-                dolary.add(uuid, amount, null, "vault:add");
             }
 
-            @Override public boolean take(UUID uuid, long amount) {
-                if (amount <= 0) return true;
+            @Override
+            public boolean take(UUID uuid, double amount) {
+                if (amount <= 0.0) return true;
 
-                if (vaultEco == null) return dolary.take(uuid, amount);
+                if (vaultEco == null) {
+                    return dolary.take(uuid, amount, null, "cmd:take");
+                }
 
                 var p = getServer().getOfflinePlayer(uuid);
                 var resp = vaultEco.withdrawPlayer(p, amount);
-                boolean ok = resp != null && resp.type == net.milkbowl.vault.economy.EconomyResponse.ResponseType.SUCCESS;
-
-                if (ok) dolary.take(uuid, amount, null, "vault:take");
-                return ok;
+                return resp != null
+                        && resp.type == net.milkbowl.vault.economy.EconomyResponse.ResponseType.SUCCESS;
             }
 
-            @Override public boolean pay(UUID from, UUID to, long amount) {
-                if (amount <= 0) return true;
+            @Override
+            public boolean pay(UUID from, UUID to, double amount) {
+                if (amount <= 0.0) return true;
 
-                if (vaultEco == null) return dolary.pay(from, to, amount);
+                if (vaultEco == null) {
+                    return dolary.pay(from, to, amount, null, "cmd:pay");
+                }
 
                 var pf = getServer().getOfflinePlayer(from);
                 var pt = getServer().getOfflinePlayer(to);
 
                 var w = vaultEco.withdrawPlayer(pf, amount);
-                if (w == null || w.type != net.milkbowl.vault.economy.EconomyResponse.ResponseType.SUCCESS) return false;
+                if (w == null || w.type != net.milkbowl.vault.economy.EconomyResponse.ResponseType.SUCCESS) {
+                    return false;
+                }
 
                 var d = vaultEco.depositPlayer(pt, amount);
                 if (d == null || d.type != net.milkbowl.vault.economy.EconomyResponse.ResponseType.SUCCESS) {
-                    // rollback jeśli deposit nie wyszedł
                     vaultEco.depositPlayer(pf, amount);
                     return false;
                 }
 
-                // historia
-                dolary.pay(from, to, amount, null, "vault:pay");
                 return true;
             }
         });
 
-        // /vpln -> zostaje JSON service
+        // /vpln -> pełna obsługa części dziesiętnych
         registerMoneyCommand("vpln", "VPLN", new MoneyCommand.Backend() {
-            @Override public long get(UUID uuid) { return vpln.get(uuid); }
-            @Override public void set(UUID uuid, long bal) { vpln.set(uuid, bal, null, "cmd:set"); }
-            @Override public void add(UUID uuid, long amount) { vpln.add(uuid, amount, null, "cmd:add"); }
-            @Override public boolean take(UUID uuid, long amount) { return vpln.take(uuid, amount, null, "cmd:take"); }
-            @Override public boolean pay(UUID from, UUID to, long amount) { return vpln.pay(from, to, amount, null, "cmd:pay"); }
+            @Override
+            public double get(UUID uuid) {
+                return vpln.get(uuid);
+            }
+
+            @Override
+            public void set(UUID uuid, double bal) {
+                vpln.set(uuid, Math.max(0.0, bal), null, "cmd:set");
+            }
+
+            @Override
+            public void add(UUID uuid, double amount) {
+                if (amount <= 0.0) return;
+                vpln.add(uuid, amount, null, "cmd:add");
+            }
+
+            @Override
+            public boolean take(UUID uuid, double amount) {
+                if (amount <= 0.0) return true;
+                return vpln.take(uuid, amount, null, "cmd:take");
+            }
+
+            @Override
+            public boolean pay(UUID from, UUID to, double amount) {
+                if (amount <= 0.0) return true;
+                return vpln.pay(from, to, amount, null, "cmd:pay");
+            }
         });
 
-        // 4) GUI /eco-server
         EcoServerGUI ecoGui = new EcoServerGUI(dolaryStore, vplnStore, dolaryMult, serverMult);
         PluginCommand ecoCmd = getCommand("eco-server");
         if (ecoCmd != null) {
@@ -216,12 +220,10 @@ public final class HTGEconomyPlugin extends JavaPlugin {
         try { if (history != null) history.flushNow(); } catch (Throwable ignored) {}
     }
 
-    /** Getter pod plugin-instance (opcjonalnie, jak ktoś nie chce ServicesManager). */
     public HTGEconomyAPI api() {
         return api;
     }
 
-    /** Alias pod inne pluginy (np. HTGModule) */
     public HTGEconomyAPI getApi() {
         return api;
     }

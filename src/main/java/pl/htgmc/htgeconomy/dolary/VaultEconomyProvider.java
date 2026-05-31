@@ -5,7 +5,12 @@ import net.milkbowl.vault.economy.EconomyResponse;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.util.List;
+import java.util.Locale;
 
 public final class VaultEconomyProvider implements Economy {
 
@@ -15,30 +20,45 @@ public final class VaultEconomyProvider implements Economy {
         this.dolary = dolary;
     }
 
+    private static double round2(double value) {
+        return BigDecimal.valueOf(value)
+                .setScale(2, RoundingMode.HALF_UP)
+                .doubleValue();
+    }
+
     private static EconomyResponse ok(double amount, double balance) {
-        return new EconomyResponse(amount, balance, EconomyResponse.ResponseType.SUCCESS, null);
+        return new EconomyResponse(round2(amount), round2(balance), EconomyResponse.ResponseType.SUCCESS, null);
     }
 
     private static EconomyResponse fail(String msg) {
         return new EconomyResponse(0, 0, EconomyResponse.ResponseType.FAILURE, msg);
     }
 
-    private static long toLong(double amount) {
-        // Vault działa na double, ale my trzymamy long (bez części dziesiętnej)
-        // obcinamy w dół, żeby ktoś nie wpisał 0.9 i nie dostał 1
-        return (long) Math.floor(amount);
-    }
+    private static final ThreadLocal<DecimalFormat> MONEY_FMT = ThreadLocal.withInitial(() -> {
+        DecimalFormatSymbols symbols = new DecimalFormatSymbols(Locale.GERMANY);
+        symbols.setGroupingSeparator('.');
+        symbols.setDecimalSeparator(',');
+
+        DecimalFormat df = new DecimalFormat("#,##0.00", symbols);
+        df.setGroupingUsed(true);
+        df.setMinimumFractionDigits(2);
+        df.setMaximumFractionDigits(2);
+        return df;
+    });
 
     @Override public boolean isEnabled() { return true; }
     @Override public String getName() { return "HTGEconomy-Dolary"; }
 
     @Override public boolean hasBankSupport() { return false; }
-    @Override public int fractionalDigits() { return 0; }
+    @Override public int fractionalDigits() { return 2; }
 
     @Override public String currencyNameSingular() { return "dolar"; }
     @Override public String currencyNamePlural() { return "dolary"; }
 
-    @Override public String format(double amount) { return String.valueOf(toLong(amount)); }
+    @Override
+    public String format(double amount) {
+        return MONEY_FMT.get().format(round2(amount));
+    }
 
     // --- Accounts (OfflinePlayer) ---
     @Override public boolean hasAccount(OfflinePlayer player) { return true; }
@@ -60,9 +80,9 @@ public final class VaultEconomyProvider implements Economy {
 
     @Override
     public boolean has(OfflinePlayer player, double amount) {
-        long a = toLong(amount);
-        if (a <= 0) return true;
-        return dolary.get(player.getUniqueId()) >= a;
+        double a = round2(amount);
+        if (a <= 0.0) return true;
+        return dolary.get(player.getUniqueId()) + 0.0000001 >= a;
     }
 
     @Override
@@ -73,12 +93,12 @@ public final class VaultEconomyProvider implements Economy {
     // --- Withdraw / Deposit (OfflinePlayer) ---
     @Override
     public EconomyResponse withdrawPlayer(OfflinePlayer player, double amount) {
-        long a = toLong(amount);
-        if (a < 0) return fail("amount<0");
-        if (a == 0) return ok(0, getBalance(player));
+        double a = round2(amount);
+        if (a < 0.0) return fail("amount<0");
+        if (a == 0.0) return ok(0, getBalance(player));
 
-        boolean ok = dolary.take(player.getUniqueId(), a);
-        return ok ? ok(a, getBalance(player)) : fail("insufficient funds");
+        boolean success = dolary.take(player.getUniqueId(), a, null, "vault:withdraw");
+        return success ? ok(a, getBalance(player)) : fail("insufficient funds");
     }
 
     @Override
@@ -88,11 +108,11 @@ public final class VaultEconomyProvider implements Economy {
 
     @Override
     public EconomyResponse depositPlayer(OfflinePlayer player, double amount) {
-        long a = toLong(amount);
-        if (a < 0) return fail("amount<0");
-        if (a == 0) return ok(0, getBalance(player));
+        double a = round2(amount);
+        if (a < 0.0) return fail("amount<0");
+        if (a == 0.0) return ok(0, getBalance(player));
 
-        dolary.add(player.getUniqueId(), a);
+        dolary.add(player.getUniqueId(), a, null, "vault:deposit");
         return ok(a, getBalance(player));
     }
 
@@ -101,7 +121,7 @@ public final class VaultEconomyProvider implements Economy {
         return depositPlayer(player, amount);
     }
 
-    // --- Name-based (dla kompatybilności) ---
+    // --- Name-based ---
     @Override public boolean hasAccount(String playerName) { return true; }
     @Override public boolean hasAccount(String playerName, String worldName) { return true; }
 

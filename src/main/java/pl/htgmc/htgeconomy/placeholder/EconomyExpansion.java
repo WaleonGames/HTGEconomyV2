@@ -58,8 +58,8 @@ public final class EconomyExpansion extends PlaceholderExpansion {
         final String key = params.toLowerCase(Locale.ROOT);
         final UUID uuid = p.getUniqueId();
 
-        final long d = dolary.get(uuid);
-        final long v = vpln.get(uuid);
+        final double d = dolary.get(uuid);
+        final double v = vpln.get(uuid);
 
         return switch (key) {
 
@@ -72,15 +72,15 @@ public final class EconomyExpansion extends PlaceholderExpansion {
             case "vpln_fmt", "vpln_balance_formatted" -> fmtMoney(v);
 
             // --- MNOŻNIKI (GRACZ) ---
-            case "multiplier" -> fmtMult(mult.getMultiplier(p));               // np. 1.10
-            case "multiplier_raw" -> String.valueOf(mult.getMultiplier(p));    // np. 1.1
-            case "rank" -> mult.getRank(p).key;                                  // default/vip/mvip/astra
+            case "multiplier" -> fmtMult(mult.getMultiplier(p));
+            case "multiplier_raw" -> String.valueOf(mult.getMultiplier(p));
+            case "rank" -> mult.getRank(p).key;
 
             // --- MNOŻNIK (SERWER / GLOBALNY) ---
-            case "server_multiplier" -> fmtMult(serverMult.getServerMultiplier());        // średnia z online
+            case "server_multiplier" -> fmtMult(serverMult.getServerMultiplier());
             case "server_multiplier_raw" -> String.valueOf(serverMult.getServerMultiplier());
-            case "server_multiplier_sum" -> fmtMult(serverMult.getSumMultiplier());       // suma mnożników
-            case "server_multiplier_n" -> String.valueOf(serverMult.getSampleSize());     // ilu online liczyło
+            case "server_multiplier_sum" -> fmtMult(serverMult.getSumMultiplier());
+            case "server_multiplier_n" -> String.valueOf(serverMult.getSampleSize());
 
             // --- WALUTA JAKO TEKST ---
             case "currency_dolary" -> "$";
@@ -90,13 +90,11 @@ public final class EconomyExpansion extends PlaceholderExpansion {
         };
     }
 
-    private static String fmtMoney(long value) {
-        // long -> zawsze będzie ",00"
-        return MONEY_FMT.get().format((double) value);
+    private static String fmtMoney(double value) {
+        return MONEY_FMT.get().format(value);
     }
 
     private static String fmtMult(double m) {
-        // mnożnik jako 1.10 (kropka, bo to współczynnik)
         return String.format(Locale.ROOT, "%.2f", m);
     }
 }

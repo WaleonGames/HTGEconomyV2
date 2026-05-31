@@ -56,14 +56,14 @@ public final class HTGEconomyAPIImpl implements HTGEconomyAPI {
     // ---- DOLARY
 
     @Override
-    public long getDolary(UUID uuid) {
+    public double getDolary(UUID uuid) {
         if (vaultEco == null) return dolary.get(uuid);
-        return (long) vaultEco.getBalance(Bukkit.getOfflinePlayer(uuid));
+        return vaultEco.getBalance(Bukkit.getOfflinePlayer(uuid));
     }
 
     @Override
-    public void setDolary(UUID uuid, long balance) {
-        long bal = Math.max(0L, balance);
+    public void setDolary(UUID uuid, double balance) {
+        double bal = Math.max(0.0, balance);
 
         if (vaultEco == null) {
             dolary.set(uuid, bal);
@@ -72,56 +72,94 @@ public final class HTGEconomyAPIImpl implements HTGEconomyAPI {
 
         OfflinePlayer p = Bukkit.getOfflinePlayer(uuid);
         double cur = vaultEco.getBalance(p);
-        double target = bal;
-        double diff = target - cur;
+        double diff = bal - cur;
 
-        if (diff > 0) vaultEco.depositPlayer(p, diff);
-        else if (diff < 0) vaultEco.withdrawPlayer(p, -diff);
+        if (diff > 0.0) {
+            vaultEco.depositPlayer(p, diff);
+        } else if (diff < 0.0) {
+            vaultEco.withdrawPlayer(p, -diff);
+        }
     }
 
     @Override
-    public void addDolary(UUID uuid, long amount) {
-        if (amount <= 0) return;
-        if (vaultEco == null) { dolary.add(uuid, amount); return; }
+    public void addDolary(UUID uuid, double amount) {
+        if (amount <= 0.0) return;
+
+        if (vaultEco == null) {
+            dolary.add(uuid, amount);
+            return;
+        }
+
         vaultEco.depositPlayer(Bukkit.getOfflinePlayer(uuid), amount);
     }
 
     @Override
-    public boolean takeDolary(UUID uuid, long amount) {
-        if (amount <= 0) return true;
-        if (vaultEco == null) return dolary.take(uuid, amount);
+    public boolean takeDolary(UUID uuid, double amount) {
+        if (amount <= 0.0) return true;
+
+        if (vaultEco == null) {
+            return dolary.take(uuid, amount);
+        }
 
         OfflinePlayer p = Bukkit.getOfflinePlayer(uuid);
         var resp = vaultEco.withdrawPlayer(p, amount);
-        return resp != null && resp.type == net.milkbowl.vault.economy.EconomyResponse.ResponseType.SUCCESS;
+        return resp != null
+                && resp.type == net.milkbowl.vault.economy.EconomyResponse.ResponseType.SUCCESS;
     }
 
     @Override
-    public boolean payDolary(UUID from, UUID to, long amount) {
-        if (amount <= 0) return true;
-        if (vaultEco == null) return dolary.pay(from, to, amount);
+    public boolean payDolary(UUID from, UUID to, double amount) {
+        if (amount <= 0.0) return true;
+
+        if (vaultEco == null) {
+            return dolary.pay(from, to, amount);
+        }
 
         OfflinePlayer pf = Bukkit.getOfflinePlayer(from);
         OfflinePlayer pt = Bukkit.getOfflinePlayer(to);
 
         var w = vaultEco.withdrawPlayer(pf, amount);
-        if (w == null || w.type != net.milkbowl.vault.economy.EconomyResponse.ResponseType.SUCCESS) return false;
+        if (w == null || w.type != net.milkbowl.vault.economy.EconomyResponse.ResponseType.SUCCESS) {
+            return false;
+        }
 
         var d = vaultEco.depositPlayer(pt, amount);
         if (d == null || d.type != net.milkbowl.vault.economy.EconomyResponse.ResponseType.SUCCESS) {
             vaultEco.depositPlayer(pf, amount); // rollback
             return false;
         }
+
         return true;
     }
 
     // ---- VPLN
 
-    @Override public long getVpln(UUID uuid) { return vpln.get(uuid); }
-    @Override public void setVpln(UUID uuid, long balance) { vpln.set(uuid, Math.max(0L, balance)); }
-    @Override public void addVpln(UUID uuid, long amount) { if (amount > 0) vpln.add(uuid, amount); }
-    @Override public boolean takeVpln(UUID uuid, long amount) { return amount <= 0 || vpln.take(uuid, amount); }
-    @Override public boolean payVpln(UUID from, UUID to, long amount) { return amount <= 0 || vpln.pay(from, to, amount); }
+    @Override
+    public double getVpln(UUID uuid) {
+        return vpln.get(uuid);
+    }
+
+    @Override
+    public void setVpln(UUID uuid, double balance) {
+        vpln.set(uuid, Math.max(0.0, balance));
+    }
+
+    @Override
+    public void addVpln(UUID uuid, double amount) {
+        if (amount > 0.0) {
+            vpln.add(uuid, amount);
+        }
+    }
+
+    @Override
+    public boolean takeVpln(UUID uuid, double amount) {
+        return amount <= 0.0 || vpln.take(uuid, amount);
+    }
+
+    @Override
+    public boolean payVpln(UUID from, UUID to, double amount) {
+        return amount <= 0.0 || vpln.pay(from, to, amount);
+    }
 
     // ---- MNOŻNIKI
 
